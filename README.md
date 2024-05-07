@@ -74,3 +74,21 @@ We simulate the following connectivity loss:
 All other connections are still up.
 All partitions where Kafka-3 is the leader are unavailable.
 If we stop Kafka-3, they are still unavailable as unclean leader election is not enabled and Kafka-3 is the only broker in ISR.
+
+### Scenario 7 - Inter-Broker protocol DC connection loss with partition leader and controller in the same DC
+
+Network setup:
+* DC-A: kafka-1, kafka-2, ZK-1, ZK-2
+* DC-B: kafka-3, kafka-4, ZK-3
+ 
+We simulate a DC network split only on the inter-broker protocol level. 
+Data is produced and ISR is updated.
+
+### Scenario 8 - Inter-Broker protocol DC connection loss with partition leader and controller in different DC
+
+Network setup:
+* DC-A: kafka-1, kafka-2, ZK-1, ZK-2
+* DC-B: kafka-3, kafka-4, ZK-3
+ 
+We simulate a DC network split only on the inter-broker protocol level.
+Data is produced, but ISR is not updated.

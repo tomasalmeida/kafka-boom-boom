@@ -103,6 +103,18 @@ send_message() {
     echo
 }
 
+send_message_from() {
+    container=$1
+    name=$(container_to_name $container)
+    container_server=$2
+    shift 2
+    msg=$@
+
+    log "Sending messages via $name and server $container_server - $msg"
+    docker exec -t $name bash -c "echo $msg | kafka-console-producer --broker-list $container_server:9092 --topic test --sync --producer-property enable.idempotence=true --request-required-acks -1 --request-timeout-ms 10000"
+    echo
+}
+
 send_message_to_topic() {
     container=$1
     name=$(container_to_name $container)
@@ -128,11 +140,38 @@ read_messages() {
     fi
 }
 
+read_messages_from() {
+    container=$1
+    name=$(container_to_name $container)
+    container_server=$2
+    number_of_messages_to_read=${3:-1}
+    log "Reading $number_of_messages_to_read messages from $container connecting to $container_server:"
+    docker exec -t $name timeout 15 kafka-console-consumer --bootstrap-server $container_server:9092 --topic test --from-beginning --timeout-ms 10000 --max-messages $number_of_messages_to_read
+
+    if [ ! $? -eq 0 ]; then
+        log "Read unsuccessful"
+    fi
+}
+
 get_state() {
     container=$1
     name=$(container_to_name $container)
     log "State for partition from $container"
     docker exec -t $name zookeeper-shell localhost:2181 get /brokers/topics/test/partitions/0/state | grep '{' | grep '}'
+}
+
+get_controller() {
+    container=$1
+    name=$(container_to_name $container)
+    log "Cluster leader from $container"
+    docker exec -t $name zookeeper-shell localhost:2181 get /controller | grep '{' | grep '}'
+}
+
+force_reelection() {
+    container=$1
+    name=$(container_to_name $container)
+    log "Forcing re-election from $container"
+    docker exec -t $name zookeeper-shell localhost:2181 deleteall /controller > /dev/null
 }
 
 zookeeper_mode() {
