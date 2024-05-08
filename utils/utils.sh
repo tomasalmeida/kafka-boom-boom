@@ -97,10 +97,16 @@ send_message() {
     name=$(container_to_name $container)
     shift 1
     msg=$@
-
     log "Sending messages to $container - $msg"
     docker exec -t $name bash -c "echo $msg | kafka-console-producer --broker-list localhost:9092 --topic test --sync --request-required-acks -1 --request-timeout-ms 10000"
     echo
+}
+
+get_last_offset() {
+    container=$1
+    name=$(container_to_name $container)
+    log "Offset from $container"
+    docker exec -t $name kafka-run-class kafka.tools.GetOffsetShell --broker-list localhost:9092 --topic test --time -1
 }
 
 send_message_from() {
@@ -108,10 +114,10 @@ send_message_from() {
     name=$(container_to_name $container)
     container_server=$2
     shift 2
-    msg=$@
-
+    ## add a timestamp to the message
+    msg=`date +%s`" - $@"
     log "Sending messages via $name and server $container_server - $msg"
-    docker exec -t $name bash -c "echo $msg | kafka-console-producer --broker-list $container_server:9092 --topic test --sync --producer-property enable.idempotence=true --request-required-acks -1 --request-timeout-ms 10000"
+    docker exec -t $name bash -c "echo $msg | kafka-console-producer --broker-list $container_server:9092 --topic test --sync --producer-property enable.idempotence=true --request-required-acks -1 --request-timeout-ms 60000"
     echo
 }
 
@@ -146,7 +152,7 @@ read_messages_from() {
     container_server=$2
     number_of_messages_to_read=${3:-1}
     log "Reading $number_of_messages_to_read messages from $container connecting to $container_server:"
-    docker exec -t $name timeout 15 kafka-console-consumer --bootstrap-server $container_server:9092 --topic test --from-beginning --timeout-ms 10000 --max-messages $number_of_messages_to_read
+    docker exec -t $name timeout 15 kafka-console-consumer --bootstrap-server $container_server:9092 --topic test --from-beginning --timeout-ms 10000 --property print.timestamp=true --max-messages $number_of_messages_to_read
 
     if [ ! $? -eq 0 ]; then
         log "Read unsuccessful"
@@ -200,7 +206,7 @@ create_topic() {
     min=$1
 
     log "Creating topic with partitions=$partitions, replication factor=$repl and min.isr=$min"
-    log `docker exec -t $name kafka-topics --zookeeper localhost:2181 --create --topic $topic --replication-factor $repl --config min.insync.replicas=$min --partitions $partitions`
+    log `docker exec -t $name kafka-topics --zookeeper localhost:2181 --create --topic $topic --replication-factor $repl --config min.insync.replicas=$min --partitions $partitions --config message.timestamp.type=LogAppendTime`
 }
 
 describe_topic() {

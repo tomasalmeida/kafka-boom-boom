@@ -17,6 +17,7 @@ Those scenarios try to emulate a Kafka stretch cluster over 2 datacenters.
 - If Zookeeper quorum is rebuilt, there is actually no guarantee that the new quorum have all the latest data:
   - this could results in data loss or in messages getting duplicated inside leaders 
 	- it's probably better to rely on hierarchical quorum to avoid those issues
+- In case the inter-broker network is lost between data centers, some data is persisted, but the high watermark is not updated until the network is established. 
 
 ## Scenarios
 
@@ -82,7 +83,7 @@ Network setup:
 * DC-B: kafka-3, kafka-4, ZK-3
  
 We simulate a DC network split only on the inter-broker protocol level. 
-Data is produced and ISR is updated.
+ISR is correctly updated, first event is persisted and visible once the network is back.
 
 ### Scenario 8 - Inter-Broker protocol DC connection loss with partition leader and controller in different DC
 
@@ -91,4 +92,4 @@ Network setup:
 * DC-B: kafka-3, kafka-4, ZK-3
  
 We simulate a DC network split only on the inter-broker protocol level.
-Data is produced, but ISR is not updated.
+ISR is NEVER updated, all events are persisted and visible once the network is back (producer receives exception).
