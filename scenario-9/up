@@ -1,0 +1,80 @@
+#!/bin/bash
+
+source ../utils/utils.sh
+
+docker-compose down -v
+docker-compose up -d
+
+log 'Waiting 30 seconds for containers to start...'
+sleep 30
+
+KAFKA_1_IP=$(container_to_ip kafka-1)
+KAFKA_2_IP=$(container_to_ip kafka-2)
+KAFKA_3_IP=$(container_to_ip kafka-3)
+KAFKA_4_IP=$(container_to_ip kafka-4)
+interface=eth0
+
+main() {
+	sleep 20
+	create_topic zookeeper-1 test 1 4 1
+	sleep 5
+
+	get_state zookeeper-1
+
+	send_message_from zookeeper-1 kafka-1 'before network outage'
+	read_messages kafka-1 1
+
+	log 'Controller and partition leader should be in the same DC'
+
+	while : ; do
+		leaderId=`get_state zookeeper-1 | tail -n1 | jq .leader`
+		controlerId=`get_controller zookeeper-1 | tail -n1 | jq .brokerid`
+		log "Leader $leaderId and controller $controlerId"
+		[[ ($leaderId -le 2 && $controlerId -gt 2)  || ($leaderId -gt 2 && $controlerId -le 2) ]] || break
+		force_reelection zookeeper-1
+		sleep 5
+	done
+
+	get_last_offset kafka-$leaderId
+
+	log 'Network outage starts'
+
+	# rack A
+	block_host kafka-1 $KAFKA_3_IP $KAFKA_4_IP
+	block_host kafka-2 $KAFKA_3_IP $KAFKA_4_IP
+	# rack B
+	block_host kafka-3 $KAFKA_1_IP $KAFKA_2_IP
+	block_host kafka-4 $KAFKA_1_IP $KAFKA_2_IP
+
+	log "Let's wait for the timeouts to occur"
+	sleep 45
+
+	send_message_from zookeeper-1 kafka-1 'after network outage via broker 1'
+	read_messages_from zookeeper-1 kafka-$leaderId 3
+	get_state zookeeper-1
+
+	get_last_offset kafka-$leaderId
+
+	log 'Stop the DC with the partition leader'
+	[ $((leaderId % 2)) -eq 1 ] && colocatedId=$((leaderId + 1)) || colocatedId=$((leaderId - 1))
+	docker-compose stop kafka-$leaderId
+	docker-compose stop kafka-$colocatedId
+
+	read -p "Press enter to continue"
+
+
+	log 'Network outage ends'
+	remove_partition kafka-1 kafka-2 kafka-3 kafka-4
+
+	log 'waiting for the cluster to recover'
+	sleep 45
+
+	send_message_from zookeeper-1 kafka-$leaderId "after network outage ends - via broker $leaderId"
+	read_messages_from zookeeper-1 kafka-$leaderId 4
+
+	get_last_offset kafka-$leaderId
+
+	get_state zookeeper-1
+}
+
+main
