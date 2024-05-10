@@ -16,7 +16,7 @@ interface=eth0
 
 main() {
 	sleep 20
-	create_topic zookeeper-1 test 1 4 3
+	create_topic zookeeper-1 test 1 4 1
 	sleep 5
 
 	get_state zookeeper-1
@@ -24,7 +24,7 @@ main() {
 	send_message_from zookeeper-1 kafka-1 'before network outage'
 	read_messages kafka-1 1
 
-	log 'Controller and partition leader should not be in the same DC'
+	log 'Controller and partition leader are not in the same DC'
 
 	while : ; do
 		leaderId=`get_state zookeeper-1 | tail -n1 | jq .leader`
@@ -49,12 +49,30 @@ main() {
 	log "Let's wait for the timeouts to occur"
 	sleep 45
 
-	send_message_from zookeeper-1 kafka-1 'after network outage via broker 1'
-	send_message_from zookeeper-1 kafka-3 'after network outage via broker 3'
-	read_messages_from zookeeper-1 kafka-$leaderId 3
+	send_message_from zookeeper-1 kafka-$leaderId 'after network outage via broker '$leaderId
+
+	get_state zookeeper-1
+	get_last_offset kafka-$leaderId
+
+	log 'Stop the DC with the partition leader'
+	[ $((leaderId % 2)) -eq 1 ] && colocatedId=$((leaderId + 1)) || colocatedId=$((leaderId - 1))
+	oldLeaderId=$leaderId
+	docker-compose stop kafka-$leaderId
+	docker-compose stop kafka-$colocatedId
+
+	log 'waiting for new leader election'
+	while [ $oldLeaderId -eq $leaderId ]; do
+		sleep 5
+		leaderId=`get_state zookeeper-1 | tail -n1 | jq .leader`
+	done
+	
+	get_last_offset kafka-$leaderId
 	get_state zookeeper-1
 
-	get_last_offset kafka-$leaderId
+	send_message_from zookeeper-1 kafka-$leaderId  'after leader change via broker '$leaderId
+	
+	docker-compose start kafka-$oldLeaderId
+	docker-compose start kafka-$colocatedId
 
 	log 'Network outage ends'
 	remove_partition kafka-1 kafka-2 kafka-3 kafka-4
@@ -64,8 +82,6 @@ main() {
 
 	send_message_from zookeeper-1 kafka-$leaderId "after network outage ends - via broker $leaderId"
 	read_messages_from zookeeper-1 kafka-$leaderId 4
-
-	get_last_offset kafka-$leaderId
 
 	get_state zookeeper-1
 }
