@@ -43,3 +43,5 @@ main() {
 }
 
 main
+
+docker-compose down -v

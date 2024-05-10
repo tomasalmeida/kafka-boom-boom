@@ -93,3 +93,14 @@ Network setup:
  
 We simulate a DC network split only on the inter-broker protocol level.
 ISR is NEVER updated, all events are persisted and visible once the network is back (producer receives exception).
+
+### Scenario 9 - Inter-Broker protocol DC connection loss with leader change
+
+Network setup:
+* DC-A: kafka-1, kafka-2, ZK-1, ZK-2
+* DC-B: kafka-3, kafka-4, ZK-3
+ 
+We simulate a DC network split only on the inter-broker protocol level. 
+Partition leader and controller are in different DC.
+DC where the partition leader lives is shut down.
+ISR is correctly updated, the event produced in the old leader is discarded (variation of scenario 7 and 8).
